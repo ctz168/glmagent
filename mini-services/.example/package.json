@@ -1,0 +1,7 @@
+{
+  "name": "mini-service-example",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "echo 'Example mini-service running on port 3001' && bun --hot src/index.ts"
+  }
+}

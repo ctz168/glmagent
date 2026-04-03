@@ -149,17 +149,33 @@ RUN chown -R z:z /home/z/my-project/skills \
     && chmod -R 755 /home/z/my-project/skills
 
 # ===================== Environment ==========================
+# These ENV variables match the real Z.ai production Kata Container runtime exactly.
 ENV HOME=/home/z
-ENV PATH="/app/.venv/bin:/usr/local/bin:/home/z/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV PATH="/home/z/.venv/bin:/app/.venv/bin:/usr/local/bin:/home/z/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bun-node-fallback-bin"
 ENV VIRTUAL_ENV=/app/.venv
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV UV=/usr/local/bin/uv
 ENV UV_CACHE_DIR=/var/cache/uv
 ENV UV_PYTHON=3.12
 ENV BUN_INSTALL=/home/z/.bun
+ENV BUN_INSTALL_BIN=/usr/local/bin
+ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 ENV DATABASE_URL=file:/home/z/my-project/db/custom.db
 ENV KATA_CONTAINER=true
 ENV SHELL=/bin/bash
+ENV CLICOLOR_FORCE=0
+
+# Container metadata (defaults for local/dev, overridden by orchestrator in production)
+ENV CLAWHUB_WORKDIR=/home/z/my-project
+ENV CLAWHUB_DISABLE_TELEMETRY=1
+ENV FC_REGION=cn-hongkong
+ENV FC_FUNCTION_HANDLER=index.handler
+ENV FC_FUNCTION_MEMORY_SIZE=8192
+ENV FC_CUSTOM_LISTEN_PORT=81
+
+# Runtime step timing (set by start.sh for uptime calculation)
+ENV STEP_START_TIME=0
 
 # Working directory for the user
 WORKDIR /home/z/my-project

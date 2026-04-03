@@ -1,9 +1,12 @@
 # ============================================================
 # Caddy Configuration for GLM Agent Engine
 # Replicated from Z.ai Container Runtime
+#
+# Uses {$FC_CUSTOM_LISTEN_PORT:81} to match the real production
+# environment variable FC_CUSTOM_LISTEN_PORT (default: 81).
 # ============================================================
 
-{$PORT:81} {
+{$FC_CUSTOM_LISTEN_PORT:81} {
     # Security headers
     header {
         X-Content-Type-Options "nosniff"
@@ -13,7 +16,7 @@
         -Server
     }
 
-    # Health check endpoint (public)
+    # Health check endpoint (public, simple response for orchestrator)
     handle /health {
         respond "OK" 200
     }
@@ -30,20 +33,22 @@
         file_server
     }
 
-    # Agent Engine API (proxy to backend)
+    # Agent Engine API (proxy to FastAPI backend on :12600)
     handle /v1/* {
         reverse_proxy localhost:12600
     }
 
-    # Agent Engine docs
+    # Agent Engine Swagger docs
     handle /docs {
         reverse_proxy localhost:12600
     }
 
+    # Agent Engine ReDoc
     handle /redoc {
         reverse_proxy localhost:12600
     }
 
+    # OpenAPI schema
     handle /openapi.json {
         reverse_proxy localhost:12600
     }
@@ -53,7 +58,7 @@
         reverse_proxy localhost:12600
     }
 
-    # WebSocket support (for streaming)
+    # WebSocket support (for SSE streaming and real-time features)
     handle /ws/* {
         reverse_proxy localhost:12600 {
             header_up Connection {>Connection}
@@ -69,12 +74,14 @@
     }
 }
 
-# Internal services (19001, 19005, 19006)
-# These are started by the init script for mini-services
+# Internal services for mini-services
+# These are started by start.sh for sub-services in mini-services/
+# Port 19005 → Main Next.js app (port 3000)
 :19005 {
     reverse_proxy localhost:3000
 }
 
+# Port 19006 → Additional mini-service (port 3001)
 :19006 {
     reverse_proxy localhost:3001
 }

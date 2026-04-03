@@ -5,6 +5,9 @@
 # Data directories (mounted as volumes in production)
 data/
 
+# Worklog
+worklog.md
+
 # Environment
 .env
 .env.local

@@ -23,10 +23,15 @@ services:
       # Project
       - CLAWHUB_WORKDIR=/home/z/my-project
       - DATABASE_URL=file:/home/z/my-project/db/custom.db
-      # Container metadata
+      # Container metadata (matching real Kata Container runtime)
       - FC_REGION=${FC_REGION:-local}
       - FC_INSTANCE_ID=${FC_INSTANCE_ID:-glm-agent-local-001}
       - FC_FUNCTION_NAME=${FC_FUNCTION_NAME:-glm-agent-local}
+      - FC_FUNCTION_HANDLER=${FC_FUNCTION_HANDLER:-index.handler}
+      - FC_FUNCTION_MEMORY_SIZE=${FC_FUNCTION_MEMORY_SIZE:-8192}
+      - FC_CUSTOM_LISTEN_PORT=${FC_CUSTOM_LISTEN_PORT:-81}
+      # Platform
+      - CLAWHUB_DISABLE_TELEMETRY=1
       # Runtime
       - KATA_CONTAINER=false
     volumes:
