@@ -49,7 +49,7 @@ class Settings:
     PORT: int = int(os.getenv("PORT", "12600"))
 
     # Z.ai API (backend AI service)
-    ZAI_BASE_URL: str = os.getenv("ZAI_BASE_URL", "http://172.25.136.193:8080/v1")
+    ZAI_BASE_URL: str = os.getenv("ZAI_BASE_URL", "http://172.25.136.193:8080")
     ZAI_API_KEY: str = os.getenv("ZAI_API_KEY", "Z.ai")
     ZAI_TIMEOUT: int = int(os.getenv("ZAI_TIMEOUT", "120"))
 
@@ -111,9 +111,14 @@ app.add_middleware(
 for dir_path in [settings.DOWNLOAD_DIR, settings.UPLOAD_DIR, settings.SKILLS_DIR]:
     Path(dir_path).mkdir(parents=True, exist_ok=True)
 
+# Normalize ZAI_BASE_URL (strip trailing /v1 to avoid path duplication)
+_ZAI_BASE = settings.ZAI_BASE_URL.rstrip("/")
+if _ZAI_BASE.endswith("/v1"):
+    _ZAI_BASE = _ZAI_BASE[:-3]
+
 # HTTP client for proxying to backend
 http_client = httpx.AsyncClient(
-    base_url=settings.ZAI_BASE_URL,
+    base_url=_ZAI_BASE,
     timeout=httpx.Timeout(settings.ZAI_TIMEOUT, connect=30),
     headers={"Authorization": f"Bearer {settings.ZAI_API_KEY}"},
 )
@@ -200,7 +205,7 @@ async def get_info():
         "function_name": settings.FC_FUNCTION_NAME,
         "project_dir": settings.PROJECT_DIR,
         "skills_count": len(list(Path(settings.SKILLS_DIR).iterdir())) if Path(settings.SKILLS_DIR).exists() else 0,
-        "uptime": time.time() - (os.getenv("STEP_START_TIME", time.time()) if os.getenv("STEP_START_TIME") else time.time()),
+        "uptime_seconds": time.time() - float(os.getenv("STEP_START_TIME", time.time())),
     }
 
 
