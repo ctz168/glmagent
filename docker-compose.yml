@@ -1,0 +1,66 @@
+# ============================================================
+# GLM Agent Engine - Docker Compose Configuration
+# ============================================================
+
+services:
+  glm-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: glm-agent
+    restart: unless-stopped
+    ports:
+      - "${PORT:-81}:81"          # Caddy (public HTTP)
+      - "12600:12600"              # Agent Engine API (internal)
+      - "19005:19005"              # Mini-services proxy
+      - "19006:19006"              # Mini-services proxy
+    environment:
+      # Server
+      - PORT=12600
+      # Z.ai Backend API (replace with your own endpoint)
+      - ZAI_BASE_URL=${ZAI_BASE_URL:-http://host.docker.internal:8080/v1}
+      - ZAI_API_KEY=${ZAI_API_KEY:-your-api-key}
+      # Project
+      - CLAWHUB_WORKDIR=/home/z/my-project
+      - DATABASE_URL=file:/home/z/my-project/db/custom.db
+      # Container metadata
+      - FC_REGION=${FC_REGION:-local}
+      - FC_INSTANCE_ID=${FC_INSTANCE_ID:-glm-agent-local-001}
+      - FC_FUNCTION_NAME=${FC_FUNCTION_NAME:-glm-agent-local}
+      # Runtime
+      - KATA_CONTAINER=false
+    volumes:
+      # Persist project data
+      - ./data/project:/home/z/my-project
+      # Persist uploaded files
+      - ./data/upload:/home/z/my-project/upload
+      # Persist generated files
+      - ./data/download:/home/z/my-project/download
+      # Persist database
+      - ./data/db:/home/z/my-project/db
+      # Sync directory (for project restoration)
+      - ./data/sync:/home/sync
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:12600/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "4.0"
+        reservations:
+          memory: 2G
+          cpus: "1.0"
+
+  # Optional: Run a separate Z.ai API backend for local development
+  # Uncomment and configure if you want a self-contained setup
+  # zai-backend:
+  #   image: your-zai-backend-image:latest
+  #   container_name: zai-backend
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - ZAI_API_KEY=${ZAI_API_KEY:-your-api-key}

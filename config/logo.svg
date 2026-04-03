@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <circle cx="100" cy="100" r="90" fill="#4F46E5" opacity="0.1"/>
+  <circle cx="100" cy="100" r="60" fill="#4F46E5" opacity="0.2"/>
+  <circle cx="100" cy="100" r="30" fill="#4F46E5"/>
+  <text x="100" y="108" text-anchor="middle" fill="white" font-size="24" font-weight="bold" font-family="system-ui">Z</text>
+  <text x="100" y="170" text-anchor="middle" fill="#4F46E5" font-size="14" font-family="system-ui">GLM Agent</text>
+</svg>

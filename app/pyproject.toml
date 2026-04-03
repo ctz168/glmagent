@@ -1,0 +1,26 @@
+[project]
+name = "glm-agent-engine"
+version = "1.0.0"
+description = "GLM Agent Engine - AI Agent Runtime replicated from Z.ai Container"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
+    "python-multipart>=0.0.18",
+    "anyio>=4.8.0",
+    "numpy>=2.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+]

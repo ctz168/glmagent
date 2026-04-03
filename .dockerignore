@@ -1,0 +1,53 @@
+# ============================================================
+# .dockerignore - GLM Agent Engine
+# ============================================================
+
+# Version control
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (mounted as volumes)
+data/
+*.db
+*.sqlite
+
+# Build artifacts
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Downloaded/generated files
+download/*.pdf
+download/*.docx
+download/*.xlsx
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Documentation (not needed in image)
+*.md
+!app/README.md
+LICENSE
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+
+# Temp
+*.tmp
+*.log
+.cache/

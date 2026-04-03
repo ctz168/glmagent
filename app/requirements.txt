@@ -1,0 +1,25 @@
+# GLM Agent Engine - Python Dependencies
+# Replicated from Z.ai Container Runtime venv
+
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# HTTP client (for proxying to backend AI API)
+httpx>=0.28.0
+
+# Data validation
+pydantic>=2.10.0
+
+# File handling
+python-multipart>=0.0.18
+
+# Async utilities
+anyio>=4.8.0
+
+# Scientific computing (present in original container)
+numpy>=2.0.0
+
+# Geospatial (present in original container)
+# GDAL is installed at system level, this is just the Python bindings
+# GDAL>=3.10.0  # Uncomment if GDAL Python bindings are needed

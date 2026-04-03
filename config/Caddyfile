@@ -1,0 +1,80 @@
+# ============================================================
+# Caddy Configuration for GLM Agent Engine
+# Replicated from Z.ai Container Runtime
+# ============================================================
+
+{$PORT:81} {
+    # Security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Health check endpoint (public)
+    handle /health {
+        respond "OK" 200
+    }
+
+    # Static landing page
+    handle / {
+        root * /app/static
+        try_files {path} /index.html
+    }
+
+    # Static assets (logo, etc.)
+    handle /logo.svg {
+        root * /app/static
+        file_server
+    }
+
+    # Agent Engine API (proxy to backend)
+    handle /v1/* {
+        reverse_proxy localhost:12600
+    }
+
+    # Agent Engine docs
+    handle /docs {
+        reverse_proxy localhost:12600
+    }
+
+    handle /redoc {
+        reverse_proxy localhost:12600
+    }
+
+    handle /openapi.json {
+        reverse_proxy localhost:12600
+    }
+
+    # File download endpoint
+    handle /files/* {
+        reverse_proxy localhost:12600
+    }
+
+    # WebSocket support (for streaming)
+    handle /ws/* {
+        reverse_proxy localhost:12600 {
+            header_up Connection {>Connection}
+            header_up Upgrade {>Upgrade}
+        }
+    }
+
+    # Logging
+    log {
+        output stderr
+        format console
+        level INFO
+    }
+}
+
+# Internal services (19001, 19005, 19006)
+# These are started by the init script for mini-services
+:19005 {
+    reverse_proxy localhost:3000
+}
+
+:19006 {
+    reverse_proxy localhost:3001
+}
