@@ -1,39 +1,80 @@
 # ============================================================
 # GLM Agent Engine - Docker Compose Configuration
+#
+# Services:
+#   glm-agent    - Main agent engine (Caddy + FastAPI + tools)
+#   redis        - Redis 7 (caching, sessions, rate limiting)
+#   mysql        - MySQL 8.0 (optional, for production DB)
+#
+# Usage:
+#   cp .env.example .env          # First time setup
+#   docker compose up -d           # Start all services
+#   docker compose logs -f         # Follow logs
 # ============================================================
 
 services:
+  # ==========================================================
+  # Main GLM Agent Engine
+  # ==========================================================
   glm-agent:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: glm-agent
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      # Uncomment when using MySQL:
+      # mysql:
+      #   condition: service_healthy
     ports:
-      - "${PORT:-81}:81"          # Caddy (public HTTP)
-      - "12600:12600"              # Agent Engine API (internal)
-      - "19005:19005"              # Mini-services proxy
-      - "19006:19006"              # Mini-services proxy
+      - "${FC_CUSTOM_LISTEN_PORT:-81}:${FC_CUSTOM_LISTEN_PORT:-81}"  # Caddy (public HTTP)
+      - "${ENGINE_PORT:-12600}:12600"                                # Agent Engine API (internal)
+      - "19001:19001"                                                # Redis health proxy
+      - "19005:19005"                                                # Mini-services proxy
+      - "19006:19006"                                                # Mini-services proxy
     environment:
-      # Server
-      - PORT=12600
-      # Z.ai Backend API (replace with your own endpoint)
+      # === Server ===
+      - ENGINE_PORT=${ENGINE_PORT:-12600}
+      - FC_CUSTOM_LISTEN_PORT=${FC_CUSTOM_LISTEN_PORT:-81}
+      # === Z.ai Backend API ===
       - ZAI_BASE_URL=${ZAI_BASE_URL:-http://host.docker.internal:8080/v1}
       - ZAI_API_KEY=${ZAI_API_KEY:-your-api-key}
-      # Project
-      - CLAWHUB_WORKDIR=/home/z/my-project
-      - DATABASE_URL=file:/home/z/my-project/db/custom.db
-      # Container metadata (matching real Kata Container runtime)
+      # === IM Gateway Metadata ===
+      - ZAI_CHAT_ID=${ZAI_CHAT_ID:-}
+      - ZAI_TOKEN=${ZAI_TOKEN:-}
+      - ZAI_USER_ID=${ZAI_USER_ID:-}
+      # === Project ===
+      - CLAWHUB_WORKDIR=${CLAWHUB_WORKDIR:-/home/z/my-project}
+      # === Database ===
+      - DATABASE_URL=${DATABASE_URL:-file:/home/z/my-project/db/custom.db}
+      # === Redis ===
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      # === Auth ===
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      # === Container metadata (matching real Kata Container runtime) ===
       - FC_REGION=${FC_REGION:-local}
       - FC_INSTANCE_ID=${FC_INSTANCE_ID:-glm-agent-local-001}
       - FC_FUNCTION_NAME=${FC_FUNCTION_NAME:-glm-agent-local}
       - FC_FUNCTION_HANDLER=${FC_FUNCTION_HANDLER:-index.handler}
       - FC_FUNCTION_MEMORY_SIZE=${FC_FUNCTION_MEMORY_SIZE:-8192}
-      - FC_CUSTOM_LISTEN_PORT=${FC_CUSTOM_LISTEN_PORT:-81}
-      # Platform
-      - CLAWHUB_DISABLE_TELEMETRY=1
-      # Runtime
+      # === Platform ===
+      - CLAWHUB_DISABLE_TELEMETRY=${CLAWHUB_DISABLE_TELEMETRY:-1}
       - KATA_CONTAINER=false
+      # === Datadog ===
+      - DD_TRACE_ENABLED=${DD_TRACE_ENABLED:-false}
+      - DD_SERVICE=${DD_SERVICE:-glm-agent-engine}
+      - DD_ENV=${DD_ENV:-development}
+      # === Logging ===
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # === Timeouts ===
+      - SESSION_TIMEOUT=${SESSION_TIMEOUT:-3600}
+      - TOOL_EXECUTION_TIMEOUT=${TOOL_EXECUTION_TIMEOUT:-300}
+      - ENGINE_READ_TIMEOUT=${ENGINE_READ_TIMEOUT:-60s}
+      - ENGINE_WRITE_TIMEOUT=${ENGINE_WRITE_TIMEOUT:-60s}
+      # === Upload ===
+      - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-104857600}
     volumes:
       # Persist project data
       - ./data/project:/home/z/my-project
@@ -41,16 +82,18 @@ services:
       - ./data/upload:/home/z/my-project/upload
       # Persist generated files
       - ./data/download:/home/z/my-project/download
-      # Persist database
+      # Persist database (SQLite)
       - ./data/db:/home/z/my-project/db
       # Sync directory (for project restoration)
       - ./data/sync:/home/sync
+      # Playwright browser cache
+      - playwright-cache:/home/z/.cache
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:12600/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:${ENGINE_PORT:-12600}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -60,12 +103,88 @@ services:
           memory: 2G
           cpus: "1.0"
 
-  # Optional: Run a separate Z.ai API backend for local development
-  # Uncomment and configure if you want a self-contained setup
-  # zai-backend:
-  #   image: your-zai-backend-image:latest
-  #   container_name: zai-backend
+  # ==========================================================
+  # Redis 7 - Caching, sessions, rate limiting
+  # ==========================================================
+  redis:
+    image: redis:7-alpine
+    container_name: glm-agent-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+        --appendonly yes
+        --appendfsync everysec
+        --save 60 1000
+        --save 300 100
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.25"
+
+  # ==========================================================
+  # MySQL 8.0 - Production database (optional)
+  # Uncomment this section and comment out the SQLite DATABASE_URL
+  # above to use MySQL instead of SQLite.
+  # ==========================================================
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: glm-agent-mysql
+  #   restart: unless-stopped
   #   ports:
-  #     - "8080:8080"
+  #     - "3306:3306"
   #   environment:
-  #     - ZAI_API_KEY=${ZAI_API_KEY:-your-api-key}
+  #     MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-glmagent_root_pw}
+  #     MYSQL_DATABASE: ${MYSQL_DATABASE:-glm_agent}
+  #     MYSQL_USER: ${MYSQL_USER:-glmagent}
+  #     MYSQL_PASSWORD: ${MYSQL_PASSWORD:-glmagent_pw}
+  #   command: >
+  #     --character-set-server=utf8mb4
+  #     --collation-server=utf8mb4_unicode_ci
+  #     --default-authentication-plugin=mysql_native_password
+  #     --max-connections=200
+  #     --innodb-buffer-pool-size=256M
+  #     --slow-query-log=1
+  #     --long-query-time=2
+  #   volumes:
+  #     - mysql-data:/var/lib/mysql
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-glmagent_root_pw}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #     start_period: 30s
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1G
+  #         cpus: "2.0"
+  #       reservations:
+  #         memory: 256M
+  #         cpus: "0.5"
+
+# ============================================================
+# Named Volumes
+# ============================================================
+volumes:
+  redis-data:
+    driver: local
+  mysql-data:
+    driver: local
+  playwright-cache:
+    driver: local

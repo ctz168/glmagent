@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     tar \
     jq \
+    rsync \
+    tree \
     # Build essentials
     build-essential \
     cmake \
@@ -60,6 +62,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # GDAL (geospatial)
     gdal-bin \
     libgdal-dev \
+    # PDF & OCR processing
+    poppler-utils \
+    tesseract-ocr \
+    qpdf \
+    # Archive support
+    p7zip-full \
+    # Browser automation (Chromium for Playwright)
+    chromium \
+    chromium-driver \
     # Misc
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -115,14 +126,18 @@ RUN mkdir -p /home/z/my-project \
     && mkdir -p /home/z/my-project/upload \
     && mkdir -p /home/z/my-project/db \
     && mkdir -p /home/z/.bun \
+    && mkdir -p /home/z/.cache \
     && mkdir -p /home/sync \
     && mkdir -p /home/official_skills \
-    && mkdir -p /home/user_skills
+    && mkdir -p /home/user_skills \
+    && mkdir -p /tmp/mini-services
 
 # Set permissions
 RUN chown -R z:z /home/z \
     && chmod 755 /home/z \
-    && chmod 777 /home/sync
+    && chmod 777 /home/sync \
+    && chown -R z:z /home/z/.cache \
+    && chmod 755 /tmp/mini-services
 
 # ===================== App Directory =========================
 # /app is the agent engine directory (restricted to root)
@@ -133,6 +148,11 @@ RUN chmod 700 /app \
 
 # Install Python dependencies for agent engine
 RUN cd /app && uv pip install --python /app/.venv/bin/python -r requirements.txt
+
+# ===================== Playwright Setup ======================
+# Install Chromium browser and system dependencies for Playwright
+RUN /app/.venv/bin/playwright install chromium \
+    && /app/.venv/bin/playwright install-deps chromium
 
 # ===================== Caddy Configuration ===================
 COPY config/Caddyfile /app/Caddyfile
@@ -165,6 +185,17 @@ ENV DATABASE_URL=file:/home/z/my-project/db/custom.db
 ENV KATA_CONTAINER=true
 ENV SHELL=/bin/bash
 ENV CLICOLOR_FORCE=0
+
+# Datadog tracing & observability
+ENV DD_TRACE_ENABLED=true
+ENV DD_SERVICE=glm-agent-engine
+ENV DD_ENV=production
+
+# Redis
+ENV REDIS_URL=redis://localhost:6379/0
+
+# Logging
+ENV LOG_LEVEL=INFO
 
 # Container metadata (defaults for local/dev, overridden by orchestrator in production)
 ENV CLAWHUB_WORKDIR=/home/z/my-project

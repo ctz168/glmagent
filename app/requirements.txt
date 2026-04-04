@@ -1,25 +1,106 @@
+# ============================================================
 # GLM Agent Engine - Python Dependencies
 # Replicated from Z.ai Container Runtime venv
+# ============================================================
+#
+# Packages marked [REQUIRED] are essential for the engine to start.
+# Packages marked [OPTIONAL] are for production/deployment features
+# and can be commented out in dev environments if not needed.
+# ============================================================
 
-# Web framework
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
-
-# HTTP client (for proxying to backend AI API)
+# -------------------- Core web framework --------------------
+# [REQUIRED] FastAPI, ASGI server, HTTP client, SSE support
+fastapi>=0.128.0
+starlette>=0.50.0
+uvicorn[standard]>=0.40.0
 httpx>=0.28.0
+httpx-sse>=0.4.3
+sse-starlette>=3.2.0
+python-multipart>=0.0.21
 
-# Data validation
-pydantic>=2.10.0
+# -------------------- Data validation -----------------------
+# [REQUIRED] Pydantic for schema validation and settings
+pydantic>=2.12.0
+pydantic-settings>=2.12.0
 
-# File handling
-python-multipart>=0.0.18
+# -------------------- Database -------------------------------
+# [REQUIRED] Async database drivers, ORM, migrations
+sqlalchemy[asyncio]>=2.0.0
+aiomysql>=0.2.0
+aiosqlite>=0.20.0
+alembic>=1.13.0
 
-# Async utilities
-anyio>=4.8.0
+# -------------------- Caching -------------------------------
+# [REQUIRED] Redis client for session/cache
+redis>=7.1.0
 
-# Scientific computing (present in original container)
-numpy>=2.0.0
+# -------------------- Auth ----------------------------------
+# [REQUIRED] JWT token handling
+PyJWT>=2.10.0
 
-# Geospatial (present in original container)
-# GDAL is installed at system level, this is just the Python bindings
-# GDAL>=3.10.0  # Uncomment if GDAL Python bindings are needed
+# -------------------- Scheduling ----------------------------
+# [REQUIRED] Background task scheduling
+apscheduler>=3.11.0
+
+# -------------------- Observability -------------------------
+# [REQUIRED] Tracing, metrics, logging
+ddtrace>=4.2.0
+opentelemetry-api>=1.39.0
+opentelemetry-sdk>=1.39.0
+opentelemetry-exporter-prometheus>=0.60b0
+prometheus-client>=0.24.0
+loguru>=0.7.3
+
+# -------------------- Serialization -------------------------
+# [REQUIRED] Fast JSON serialization
+orjson>=3.11.0
+
+# -------------------- Async ---------------------------------
+# [REQUIRED] Async I/O libraries
+anyio>=4.12.0
+aiohttp>=3.13.0
+aiofiles>=24.1.0
+
+# -------------------- WebSocket -----------------------------
+# [REQUIRED] WebSocket client/server
+websockets>=16.0
+
+# -------------------- MCP -----------------------------------
+# [REQUIRED] Model Context Protocol client & server
+mcp>=1.25.0
+fastmcp>=2.14.0
+
+# -------------------- Browser automation --------------------
+# [REQUIRED] Playwright for headless browser automation
+playwright>=1.57.0
+
+# -------------------- Document processing -------------------
+# [REQUIRED] Office document & PDF reading/writing
+python-docx>=1.2.0
+python-pptx>=1.0.2
+openpyxl>=3.1.5
+pdfplumber>=0.11.0
+pymupdf>=1.26.0
+pypdf>=6.6.0
+
+# -------------------- Image processing ----------------------
+# [REQUIRED] Image manipulation and OCR support
+Pillow>=11.3.0
+opencv-python-headless>=4.13.0
+
+# -------------------- Web utilities -------------------------
+# [REQUIRED] HTML parsing, conversion, CSS selectors
+beautifulsoup4>=4.14.0
+markdownify>=1.2.0
+lxml>=6.0.0
+cssselect2>=0.8.0
+
+# -------------------- Configuration -------------------------
+# [REQUIRED] .env file loading
+python-dotenv>=1.2.0
+
+# -------------------- Cloud SDKs (optional) -----------------
+# [OPTIONAL] Alibaba Cloud Function Compute & OSS SDKs
+# Comment out these lines if not deploying to Alibaba Cloud
+alibabacloud-fc20230330>=4.6.0
+alibabacloud-oss-v2>=1.2.0

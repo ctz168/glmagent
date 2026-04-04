@@ -2,86 +2,277 @@
 # Caddy Configuration for GLM Agent Engine
 # Replicated from Z.ai Container Runtime
 #
-# Uses {$FC_CUSTOM_LISTEN_PORT:81} to match the real production
-# environment variable FC_CUSTOM_LISTEN_PORT (default: 81).
+# Uses {$ENV_VAR:default} syntax for ALL configurable values.
+# Matches the real production Kata Container runtime environment.
+#
+# Ports:
+#   {$FC_CUSTOM_LISTEN_PORT:81}  - Public HTTP (orchestrator-facing)
+#   12600                        - Agent Engine API (internal)
+#   19001                        - Internal Redis / misc health check
+#   19005                        - Mini-services proxy (Next.js :3000)
+#   19006                        - Mini-services proxy (:3001)
 # ============================================================
 
+# Global options
+{
+	# Admin API (disabled in production for security)
+	admin off
+
+	# Graceful shutdown timeout
+	shutdown_timeout 15s
+}
+
+# ============================================================
+# Main public listener
+# ============================================================
 {$FC_CUSTOM_LISTEN_PORT:81} {
-    # Security headers
-    header {
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        -Server
-    }
+	# ----- Security headers -----
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+		# Hide Caddy banner
+		-Alt-Svc
+	}
 
-    # Health check endpoint (public, simple response for orchestrator)
-    handle /health {
-        respond "OK" 200
-    }
+	# ----- Rate limiting (optional, uncomment to enable) -----
+	# rate_limit {
+	#     zone dynamic api {
+	#         key {query.api_key}
+	#         events 100
+	#         window 1m
+	#     }
+	#     zone dynamic general {
+	#         key {remote_host}
+	#         events 50
+	#         window 1m
+	#     }
+	# }
 
-    # Static landing page
-    handle / {
-        root * /app/static
-        try_files {path} /index.html
-    }
+	# ----- Health check (direct response, no proxy) -----
+	handle /health {
+		respond "OK" 200
+	}
 
-    # Static assets (logo, etc.)
-    handle /logo.svg {
-        root * /app/static
-        file_server
-    }
+	# ----- Prometheus metrics proxy -----
+	handle /metrics {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			transport http {
+				read_timeout {$ENGINE_READ_TIMEOUT:60s}
+				write_timeout {$ENGINE_WRITE_TIMEOUT:60s}
+			}
+		}
+	}
 
-    # Agent Engine API (proxy to FastAPI backend on :12600)
-    handle /v1/* {
-        reverse_proxy localhost:12600
-    }
+	# ----- MCP (Model Context Protocol) endpoint -----
+	handle /mcp {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
 
-    # Agent Engine Swagger docs
-    handle /docs {
-        reverse_proxy localhost:12600
-    }
+			transport http {
+				read_timeout {$ENGINE_READ_TIMEOUT:300s}
+				write_timeout {$ENGINE_WRITE_TIMEOUT:300s}
+			}
+		}
+	}
 
-    # Agent Engine ReDoc
-    handle /redoc {
-        reverse_proxy localhost:12600
-    }
+	# ----- MCP streamable HTTP transport -----
+	handle /mcp/* {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
 
-    # OpenAPI schema
-    handle /openapi.json {
-        reverse_proxy localhost:12600
-    }
+			transport http {
+				read_timeout {$ENGINE_READ_TIMEOUT:300s}
+				write_timeout {$ENGINE_WRITE_TIMEOUT:300s}
+			}
+		}
+	}
 
-    # File download endpoint
-    handle /files/* {
-        reverse_proxy localhost:12600
-    }
+	# ----- SSE streaming (no buffering, proper headers) -----
+	handle_path /sse/* {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up Connection ""
+			header_up -Accept-Encoding
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
 
-    # WebSocket support (for SSE streaming and real-time features)
-    handle /ws/* {
-        reverse_proxy localhost:12600 {
-            header_up Connection {>Connection}
-            header_up Upgrade {>Upgrade}
-        }
-    }
+			# Disable response buffering for SSE
+			flush_interval -1
 
-    # Logging
-    log {
-        output stderr
-        format console
-        level INFO
-    }
+			transport http {
+				read_timeout {$ENGINE_READ_TIMEOUT:300s}
+				write_timeout {$ENGINE_WRITE_TIMEOUT:300s}
+			}
+		}
+	}
+
+	# ----- WebSocket support -----
+	handle /ws/* {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+
+			transport http {
+				read_timeout {$ENGINE_READ_TIMEOUT:300s}
+				write_timeout {$ENGINE_WRITE_TIMEOUT:300s}
+			}
+		}
+	}
+
+	# ----- Agent Engine API routes -----
+	handle /v1/* {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+
+			transport http {
+				read_timeout {$ENGINE_READ_TIMEOUT:60s}
+				write_timeout {$ENGINE_WRITE_TIMEOUT:60s}
+			}
+		}
+	}
+
+	# ----- Agent Engine documentation -----
+	handle /docs {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle /redoc {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle /openapi.json {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# ----- File download endpoint -----
+	handle /files/* {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+
+			transport http {
+				read_timeout {$ENGINE_READ_TIMEOUT:120s}
+				write_timeout {$ENGINE_WRITE_TIMEOUT:120s}
+			}
+		}
+	}
+
+	# ----- Skills listing (engine-internal, no auth) -----
+	handle /skills {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle /skills/* {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# ----- Info endpoint -----
+	handle /info {
+		reverse_proxy localhost:{$ENGINE_PORT:12600} {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# ----- Static landing page -----
+	handle / {
+		root * {$STATIC_DIR:/app/static}
+		try_files {path} /index.html
+		file_server {
+			precompressed br gzip
+		}
+	}
+
+	# ----- Error pages -----
+	handle_errors {
+		@502 expression `{err.status_code} == 502`
+		@504 expression `{err.status_code} == 504`
+
+		respond @502 "Agent Engine is starting up. Please retry in a few seconds." 502
+		respond @504 "Agent Engine timed out. Please retry or simplify your request." 504
+	}
+
+	# ----- Logging -----
+	log {
+		output stderr
+		format console
+		level {$LOG_LEVEL:INFO}
+	}
 }
 
-# Internal services for mini-services
-# These are started by start.sh for sub-services in mini-services/
-# Port 19005 → Main Next.js app (port 3000)
-:19005 {
-    reverse_proxy localhost:3000
+# ============================================================
+# Internal: Redis health check / misc proxy
+# ============================================================
+:{$REDIS_HEALTH_PORT:19001} {
+	# Simple endpoint to verify Redis connectivity
+	# The engine exposes a Redis health endpoint here
+	reverse_proxy localhost:{$ENGINE_PORT:12600} {
+		transport http {
+			read_timeout 5s
+			write_timeout 5s
+		}
+	}
 }
 
-# Port 19006 → Additional mini-service (port 3001)
-:19006 {
-    reverse_proxy localhost:3001
+# ============================================================
+# Mini-services proxies
+# ============================================================
+
+# Port 19005 -> Main Next.js app (port 3000)
+:{$MINI_SERVICE_PORT_1:19005} {
+	reverse_proxy localhost:{$NEXTJS_PORT:3000} {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+
+		transport http {
+			read_timeout 60s
+			write_timeout 60s
+		}
+	}
+}
+
+# Port 19006 -> Additional mini-service (port 3001)
+:{$MINI_SERVICE_PORT_2:19006} {
+	reverse_proxy localhost:{$MINI_SERVICE_2_PORT:3001} {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+
+		transport http {
+			read_timeout 60s
+			write_timeout 60s
+		}
+	}
 }

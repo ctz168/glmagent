@@ -8,14 +8,54 @@
 # 2. Official skills extraction from /home/official_skills
 # 3. Permission setup
 # 4. Git repository initialization
-# 5. Z.ai backend config writing
-# 6. ZAI Agent Engine startup (background)
-# 7. Bun/Next.js project initialization (background)
-# 8. Mini-services startup (background)
-# 9. Caddy reverse proxy (foreground, PID 1)
+# 5. Z.ai backend config writing (with IM gateway metadata)
+# 6. Playwright browser installation check
+# 7. Redis connection check (optional)
+# 8. ZAI Agent Engine startup (background)
+# 9. Bun/Next.js project initialization (background)
+# 10. Mini-services startup (background)
+# 11. Caddy reverse proxy (foreground, PID 1)
 # ============================================================
 
 set -e
+
+# ===================== Signal Handling =======================
+# Cleanup on shutdown: kill background processes, flush logs
+
+cleanup() {
+    echo "=========================================="
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Shutting down..."
+    echo "=========================================="
+
+    # Kill the ZAI engine if running
+    if [ -n "$ZAI_PID" ] && kill -0 "$ZAI_PID" 2>/dev/null; then
+        echo "Stopping ZAI engine (PID: $ZAI_PID)..."
+        kill -TERM "$ZAI_PID" 2>/dev/null || true
+    fi
+
+    # Kill the bun/dev process if running
+    if [ -n "$BUN_PID" ] && kill -0 "$BUN_PID" 2>/dev/null; then
+        echo "Stopping project process (PID: $BUN_PID)..."
+        kill -TERM "$BUN_PID" 2>/dev/null || true
+    fi
+
+    # Kill any mini-service processes we spawned
+    if [ -n "$MINI_SERVICE_PIDS" ]; then
+        echo "Stopping mini-services..."
+        for pid in $MINI_SERVICE_PIDS; do
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -TERM "$pid" 2>/dev/null || true
+            fi
+        done
+    fi
+
+    # Wait briefly for graceful shutdown
+    sleep 2
+
+    echo "Shutdown complete."
+}
+
+trap cleanup EXIT SIGTERM SIGINT SIGQUIT
 
 # ===================== Logging Helpers ======================
 
@@ -45,8 +85,11 @@ log_step_end() {
 export -f log_step_start
 export -f log_step_end
 
+# Track mini-service PIDs for cleanup
+MINI_SERVICE_PIDS=""
+
 # ===================== Step 1: Project Init =================
-# FIXME 项目是否初始化，应该通过文件标记，而不是目录是否为空
+# FIXME: Project initialization check should use a marker file, not directory emptiness
 
 log_step_start "Project initialization check"
 SYNC_DIR=/home/sync
@@ -194,14 +237,79 @@ else
 fi
 log_step_end "Git setup"
 
-# Write Z.ai backend config (always overwrite, matches production behavior)
+# ===================== Step 5: Z.ai Config ==================
+# Write Z.ai backend config (always overwritten, matching production behavior)
+# Config now includes chatId, token, userId from IM gateway metadata
+
 log_step_start "Z.ai config setup"
 ZAI_CONFIG_FILE="/etc/.z-ai-config"
 ZAI_BASE_URL="${ZAI_BASE_URL:-http://172.25.136.193:8080/v1}"
 ZAI_API_KEY="${ZAI_API_KEY:-Z.ai}"
-echo "{\"baseUrl\": \"$ZAI_BASE_URL\", \"apiKey\": \"$ZAI_API_KEY\"}" > "$ZAI_CONFIG_FILE"
+
+# IM gateway metadata (set by orchestrator, empty in local dev)
+ZAI_CHAT_ID="${ZAI_CHAT_ID:-}"
+ZAI_TOKEN="${ZAI_TOKEN:-}"
+ZAI_USER_ID="${ZAI_USER_ID:-}"
+
+# Build config JSON (always overwrite)
+if [ -n "$ZAI_CHAT_ID" ] || [ -n "$ZAI_TOKEN" ] || [ -n "$ZAI_USER_ID" ]; then
+  # Full config with IM gateway metadata
+  cat > "$ZAI_CONFIG_FILE" <<ZAI_EOF
+{
+  "baseUrl": "$ZAI_BASE_URL",
+  "apiKey": "$ZAI_API_KEY",
+  "chatId": "$ZAI_CHAT_ID",
+  "token": "$ZAI_TOKEN",
+  "userId": "$ZAI_USER_ID"
+}
+ZAI_EOF
+  echo "Z.ai config written with IM gateway metadata (chatId=$ZAI_CHAT_ID, userId=$ZAI_USER_ID)"
+else
+  # Minimal config without IM metadata
+  echo "{\"baseUrl\": \"$ZAI_BASE_URL\", \"apiKey\": \"$ZAI_API_KEY\"}" > "$ZAI_CONFIG_FILE"
+  echo "Z.ai config written (minimal, no IM metadata)"
+fi
 chmod 444 "$ZAI_CONFIG_FILE"
 log_step_end "Z.ai config setup"
+
+# ===================== Step 6: Playwright Check ==============
+# Ensure Playwright browser is installed and cache dir exists
+
+log_step_start "Playwright browser check"
+mkdir -p /home/z/.cache
+chown -R z:z /home/z/.cache
+chmod 755 /home/z/.cache
+
+# Check if Chromium is available (installed via Dockerfile)
+if command -v chromium &>/dev/null; then
+  echo "Chromium browser found: $(chromium --version 2>/dev/null || echo 'version unknown')"
+else
+  echo "Warning: Chromium browser not found. Browser automation features may not work."
+  echo "Install it with: /app/.venv/bin/playwright install chromium"
+fi
+
+# Verify Playwright itself is available
+if [ -x "/app/.venv/bin/playwright" ]; then
+  echo "Playwright CLI available: $(/app/.venv/bin/playwright --version 2>/dev/null || echo 'version unknown')"
+else
+  echo "Warning: Playwright CLI not found at /app/.venv/bin/playwright"
+fi
+log_step_end "Playwright browser check"
+
+# ===================== Step 7: Redis Check (Optional) ========
+# Check Redis connectivity if REDIS_URL is set
+
+log_step_start "Redis connection check"
+REDIS_URL="${REDIS_URL:-}"
+if [ -n "$REDIS_URL" ]; then
+  echo "REDIS_URL is configured: ${REDIS_URL%%@*}@***"
+  # Basic connectivity check via the engine health endpoint later
+  echo "Redis will be verified when engine starts."
+else
+  echo "REDIS_URL is not configured. Redis features disabled."
+  echo "Set REDIS_URL=redis://host:6379/0 to enable Redis caching and sessions."
+fi
+log_step_end "Redis connection check"
 
 # ===================== Service Helpers =======================
 
@@ -209,7 +317,7 @@ wait_for_service() {
     local host="$1"
     local port="$2"
     local service_name="$3"
-    local max_attempts=60
+    local max_attempts="${4:-60}"
     local attempt=1
 
     echo "Waiting for $service_name to be ready on $host:$port..."
@@ -229,16 +337,21 @@ wait_for_service() {
     return 1
 }
 
-# ===================== Step 6: Start ZAI Service =============
+# ===================== Step 8: Start ZAI Service =============
 # Start ZAI Agent Engine in background (root runs /app/, z user cannot access /app/ with 700 perms)
 
 log_step_start "Starting ZAI service"
 echo "Starting ZAI service in background as root..."
+echo "CLAWHUB_WORKDIR=$CLAWHUB_WORKDIR"
+echo "DATABASE_URL=${DATABASE_URL:-not set}"
+echo "LOG_LEVEL=${LOG_LEVEL:-INFO}"
+
 (cd /app && uv run main.py) &
 ZAI_PID=$!
+echo "ZAI engine started with PID: $ZAI_PID"
 log_step_end "Starting ZAI service"
 
-# ===================== Step 7: Project Services ==============
+# ===================== Step 9: Project Services ==============
 # Start bun project initialization in background
 
 echo "Starting project initialization in background..."
@@ -307,6 +420,7 @@ elif [ -f "/home/z/my-project/package.json" ]; then
             fi
           ) > /tmp/mini-service-${service_name}.log 2>&1 &
           SERVICE_PID=$!
+          MINI_SERVICE_PIDS="$MINI_SERVICE_PIDS $SERVICE_PID"
           echo "[$service_name] Started in background (PID: $SERVICE_PID)"
         else
           echo "[$service_name] No package.json found, skipping..."
@@ -323,19 +437,29 @@ else
   echo "[INIT] Neither custom dev script nor package.json found, skipping project initialization."
 fi
 
-# ===================== Step 8: Wait for ZAI =================
+# ===================== Step 10: Wait for ZAI ================
 
 log_step_start "Waiting for ZAI service"
-wait_for_service "localhost" "12600" "ZAI Control Service"
+wait_for_service "localhost" "${ENGINE_PORT:-12600}" "ZAI Control Service"
 if [ $? -ne 0 ]; then
     echo "ERROR: ZAI service failed to start"
     exit 1
 fi
+
+# Verify engine is actually responding (not just accepting connections)
+echo "Performing engine health check..."
+ENGINE_HEALTH=$(curl -sf --max-time 5 "http://localhost:${ENGINE_PORT:-12600}/health" 2>/dev/null || echo "FAILED")
+if [ "$ENGINE_HEALTH" = "FAILED" ]; then
+    echo "Warning: Engine health check returned non-200, but port is open. Continuing anyway."
+else
+    echo "Engine health check passed: $ENGINE_HEALTH"
+fi
 log_step_end "Waiting for ZAI service"
 
-# ===================== Step 9: Start Caddy ==================
+# ===================== Step 11: Start Caddy =================
 
 log_step_start "Starting Caddy server"
-echo "Both services are ready. Starting Caddy with configuration from /app/Caddyfile..."
-echo "Caddy will run in foreground mode as the main process"
+echo "All services are ready. Starting Caddy with configuration from /app/Caddyfile..."
+echo "Caddy will run in foreground mode as the main process (PID 1)"
+echo "Listening on port: ${FC_CUSTOM_LISTEN_PORT:-81}"
 exec caddy run --config /app/Caddyfile --adapter caddyfile
