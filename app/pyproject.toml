@@ -1,6 +1,6 @@
 [project]
 name = "glm-agent-engine"
-version = "1.0.0"
+version = "2.0.0"
 description = "GLM Agent Engine - AI Agent Runtime replicated from Z.ai Container"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -6,7 +6,7 @@ FROM debian:trixie-slim
 
 LABEL maintainer="ctz168"
 LABEL description="GLM Agent Engine Container - Z.ai Runtime Replica"
-LABEL version="1.0.0"
+LABEL version="2.0.0"
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
