@@ -69,7 +69,6 @@ from fastapi.responses import (
     HTMLResponse,
     FileResponse,
 )
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
@@ -1534,7 +1533,7 @@ async def get_session(session_id: str, auth: dict = Depends(require_auth)):
             from sqlalchemy import select
             result = await db.execute(select(SessionModel).where(SessionModel.id == session_id))
             session_model = result.scalar_one_or_none()
-            if not session_model:
+            if not session_model or session_model.status == "deleted":
                 raise HTTPException(status_code=404, detail="Session not found")
             data = {
                 "id": session_model.id,
@@ -1893,6 +1892,7 @@ async def _restore_cron_jobs():
     """Restore active cron jobs from database on startup."""
     if not APSCHEDULER_AVAILABLE or not SQLALCHEMY_AVAILABLE or scheduler is None:
         return
+    jobs = []
     async with async_session_factory() as db:
         from sqlalchemy import select
         result = await db.execute(
@@ -2008,7 +2008,7 @@ async def list_cron_jobs(auth: dict = Depends(require_auth)):
     if SQLALCHEMY_AVAILABLE:
         async with async_session_factory() as db:
             from sqlalchemy import select
-            result = await db.execute(select(CronJobModel).order_by(CronJobModel.created_at.desc()))
+            result = await db.execute(select(CronJobModel).where(CronJobModel.status != "deleted").order_by(CronJobModel.created_at.desc()))
             jobs = result.scalars().all()
             return {
                 "jobs": [
@@ -2039,7 +2039,7 @@ async def get_cron_job(job_id: str, auth: dict = Depends(require_auth)):
             from sqlalchemy import select
             result = await db.execute(select(CronJobModel).where(CronJobModel.id == job_id))
             job = result.scalar_one_or_none()
-            if not job:
+            if not job or job.status == "deleted":
                 raise HTTPException(status_code=404, detail="Cron job not found")
             return {
                 "id": job.id,

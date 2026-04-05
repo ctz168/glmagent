@@ -54,7 +54,6 @@ dependencies = [
 
     # MCP
     "mcp>=1.25.0",
-    "fastmcp>=2.14.0",
 
     # Browser automation
     "playwright>=1.57.0",

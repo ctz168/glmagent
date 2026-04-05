@@ -68,7 +68,6 @@ websockets>=16.0
 # -------------------- MCP -----------------------------------
 # [REQUIRED] Model Context Protocol client & server
 mcp>=1.25.0
-fastmcp>=2.14.0
 
 # -------------------- Browser automation --------------------
 # [REQUIRED] Playwright for headless browser automation
